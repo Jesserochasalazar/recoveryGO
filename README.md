@@ -1,50 +1,48 @@
-# Welcome to your Expo app 👋
+# Welcome to RecoveryGo
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## About RecoveryGO
 
-## Get started
+ recoveryGO is a mobile-first digital recovery assistant designed to support individuals through personalized rehabilitation routines. Whether you're an athlete recovering from injury, a senior working on mobility, or someone in general need of guided recovery, recoveryGO provides a smart, easy-to-use platform to help you heal safely and consistently.
 
-1. Install dependencies
+## The app allows users to:
 
-   ```bash
-   npm install
-   ```
+   Choose their recovery profile (Athlete, Senior, General User, or Doctor)
 
-2. Start the app
+   Receive AI-generated recovery plans tailored to their needs
 
-   ```bash
-   npx expo start
-   ```
+   Build custom routines manually with adjustable reps, durations, and categories
 
-In the output, you'll find options to open the app in a
+   Track daily progress and consistency
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+   Access recovery plans from doctors or therapists through assigned routines
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+   Medical professionals can also create accounts to manage patient routines, publish public recovery programs, and support patients remotely through a centralized platform.
 
-## Get a fresh project
 
-When you're ready, run:
+## How To Install 
 
-```bash
-npm run reset-project
-```
+   1. Install dependencies
+      - [Node.js](https://nodejs.org/en/download)
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+      ```bash
+      npm install
+      ```
+   2. Choose an Emulator :
+      * [Android Studio](https://developer.android.com/studio)
+      Or
+      * Expo Go 
 
-## Learn more
+   3. Start the app
 
-To learn more about developing your project with Expo, look at the following resources:
+      ```bash
+      npx expo start
+      ```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+   In the output, you'll find options to open the app in a
 
-## Join the community
+   - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+   - [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+   - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-Join our community of developers creating universal apps.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
