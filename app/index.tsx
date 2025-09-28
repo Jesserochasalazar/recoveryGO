@@ -21,7 +21,7 @@ export default function SignInScreen() {
     const snap = await getDoc(doc(db, "users", uid));
     const onboarded = snap.exists() ? snap.data()?.onboarded === true : false;
     if (onboarded) {
-      router.replace("../(tabs)/dashboard");
+      router.replace("../patient/dashboard");
     } else {
       router.replace("/onboarding");
     }
