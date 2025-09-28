@@ -1,33 +1,42 @@
-import { Link } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+// app/onboarding.tsx
+import { useRouter } from "expo-router";
+import { doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore";
+import { Button, StyleSheet, Text, View } from "react-native";
+import { auth } from "../firebase/firebaseConfig";
+
+const db = getFirestore();
 
 export default function OnBoardingScreen() {
+  const router = useRouter();
+
+  async function completeOnboarding() {
+    const user = auth.currentUser;
+    if (!user) return; // safety; user should be signed in
+
+    await setDoc(
+      doc(db, "users", user.uid),
+      {
+        uid: user.uid,
+        email: user.email ?? "",
+        onboarded: true,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    router.replace("/(tabs)/dashboard");
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.text}>OnBoarding Screen</Text>
-      <Link href="/about" style={styles.button}>
-        Go to About screen
-      </Link>
-      <Link href="/" style={styles.button}>
-        Go to Home screen
-      </Link>
+      {/* …your profile choices UI here… */}
+      <Button title="Continue" onPress={completeOnboarding} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#25292e',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  text: {
-    color: '#fff',
-  },
-  button: {
-    fontSize: 20,
-    textDecorationLine: 'underline',
-    color: '#fff',
-  },
+  container: { flex: 1, backgroundColor: "#25292e", alignItems: "center", justifyContent: "center" },
+  text: { color: "#fff" },
 });
