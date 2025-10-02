@@ -2,8 +2,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import type { Profile } from '../types';
-import { getJSON } from '../utils/storage';
+import type { Profile } from '../../src/types';
+import { getJSON } from '../../src/utils/storage';
 
 type Plan = { id: string; name: string; exercises: number; type: string[] };
 type RoutineItem = {
