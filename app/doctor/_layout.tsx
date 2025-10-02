@@ -14,16 +14,16 @@ export default function DoctorTabs() {
       backgroundColor: '#25292e',
     },
   }}>
-      <Tabs.Screen name="dashboard" options={{ title: 'Dashboard', tabBarIcon: ({ color, focused }) => (
+      <Tabs.Screen name="dashboard" options={{ title: 'Dashboard', headerShown: false,tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home-sharp' : 'home-outline' } color={color} size={24}/> ),}}
         />
-      <Tabs.Screen name="patients" options={{ title:'Patients',
+      <Tabs.Screen name="patients" options={{ title:'Patients',headerShown: false,
         tabBarIcon: ({color, focused}) => <Ionicons name={focused?'people':'people-outline'} size={24} color={color} />
       }}/>
-      <Tabs.Screen name="create" options={{ title:'Create',
+      <Tabs.Screen name="create" options={{ title:'Create',headerShown: false,
         tabBarIcon: ({color, focused}) => <Ionicons name={focused?'add-circle':'add-circle-outline'} size={24} color={color} />
       }}/>
-      <Tabs.Screen name="settings" options={{ title:'Settings',
+      <Tabs.Screen name="settings" options={{ title:'Settings',headerShown: false,
         tabBarIcon: ({color, focused}) => <Ionicons name={focused?'settings-sharp':'settings-outline'} size={24} color={color} />
       }}/>
     </Tabs>

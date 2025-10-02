@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import type { Profile, UserType } from './types';
-import { setJSON } from './utils/storage';
+import type { Profile, UserType } from '../src/types';
+import { setJSON } from '../src/utils/storage';
 
 const userTypes: UserType[] = ['athlete', 'elderly', 'general', 'doctor'];
 const genders = ['male', 'female', 'other'] as const;
