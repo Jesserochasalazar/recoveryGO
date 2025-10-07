@@ -26,6 +26,9 @@ export default function PatientLayout() {
         <Tabs.Screen name="plans" options={{ title: 'Plans',headerShown: false, tabBarIcon: ({ color, focused }) =>  
         (<Ionicons name={focused ? 'clipboard' : 'clipboard-outline'} color={color} size={24}/>
         ),}}/>
+        <Tabs.Screen name="manual-builder" options={{ title: 'Manual Builder',headerShown: false, tabBarIcon: ({ color, focused }) =>  
+        (<Ionicons name={focused ? 'build-sharp' : 'build-outline'} color={color} size={24}/>
+        ),}}/>
         <Tabs.Screen name="settings" options={{ title: 'Settings',headerShown: false, tabBarIcon: ({ color, focused }) =>  
         (<Ionicons name={focused ? 'settings-sharp' : 'settings-outline'} color={color} size={24}/>
         ),}}/>
