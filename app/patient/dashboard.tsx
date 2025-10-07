@@ -68,20 +68,22 @@ export default function PatientDashboard() {
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
         {/* Progress Overview */}
-        <View style={styles.cardPrimary}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.cardTitle}>Today’s Progress</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {todaysRoutine.filter(x => x.completed).length}/{todaysRoutine.length} Complete
-              </Text>
-            </View>
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
-          </View>
-          <Text style={styles.cardHint}>Great job! Keep it up</Text>
-        </View>
+ <TouchableOpacity activeOpacity={0.9} onPress={() => router.push('/patient/progress')}>
+  <View style={styles.cardPrimary}>
+    <View style={styles.rowBetween}>
+      <Text style={styles.cardTitle}>Today’s Progress</Text>
+      <View style={styles.badge}>
+        <Text style={styles.badgeText}>
+          {todaysRoutine.filter(x => x.completed).length}/{todaysRoutine.length} Complete
+        </Text>
+      </View>
+    </View>
+    <View style={styles.progressTrack}>
+      <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+    </View>
+    <Text style={styles.cardHint}>Great job! Keep it up</Text>
+  </View>
+</TouchableOpacity>
 
         {/* My Plans (patients only) */}
         {savedPlans.length > 0 && (
