@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { auth } from "../firebase/firebaseConfig";
+import { upsertUser } from "../src/utils/userDoc";
 
 const db = getFirestore();
 
@@ -44,6 +45,7 @@ export default function SignInScreen() {
     setBusy(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await upsertUser(cred.user);
       await postAuthRoute(cred.user.uid);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Sign in failed");
@@ -56,6 +58,7 @@ export default function SignInScreen() {
     setBusy(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await upsertUser(cred.user);
       await postAuthRoute(cred.user.uid);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Account creation failed");
@@ -67,10 +70,18 @@ export default function SignInScreen() {
   const signInGoogle = async () => {
     setBusy(true);
     try {
-      const provider = new GoogleAuthProvider();
-      // Works on web; on native you’ll likely swap to AuthSession (see notes below)
-      const cred = await signInWithPopup(auth, provider);
-      await postAuthRoute(cred.user.uid);
+      if (Platform.OS === 'web') {
+        const provider = new GoogleAuthProvider();
+        const cred = await signInWithPopup(auth, provider);
+        await upsertUser(cred.user);
+        await postAuthRoute(cred.user.uid);
+      } else {
+        // Expo Go cannot use signInWithPopup; needs AuthSession or native Google Sign-In
+        Alert.alert(
+          'Google sign-in unsupported in Expo Go',
+          'Use Expo AuthSession OR email/password for now.'
+        );
+      }
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Google sign-in failed");
     } finally {

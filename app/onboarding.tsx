@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Profile, UserType } from '../src/types';
 import { setJSON } from '../src/utils/storage';
+import { auth } from '../firebase/firebaseConfig';
+import { upsertUser } from '../src/utils/userDoc';
 
 const userTypes: UserType[] = ['athlete', 'elderly', 'general', 'doctor'];
 const genders = ['male', 'female', 'other'] as const;
@@ -30,6 +32,23 @@ export default function OnboardingScreen() {
     };
 
     await setJSON('profile', profile);
+
+    // Mark user as onboarded and save profile fields in Firestore
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        await upsertUser(user, {
+          onboarded: true,
+          firstName,
+          lastName,
+          gender: gender!,
+          age: Number(age),
+          userType: userType!,
+        });
+      } catch (e) {
+        // non-blocking: local profile saved, routing continues
+      }
+    }
 
     if (userType === 'doctor') {
       router.replace('/doctor/dashboard');
