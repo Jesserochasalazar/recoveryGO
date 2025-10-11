@@ -29,7 +29,7 @@ export default function DoctorDashboardScreen() {
       {/* Custom Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.h1}>Dr. {displayName}</Text>
+          <Text style={styles.h1}>{displayName}</Text>
           <Text style={styles.h2}>{subTitle}</Text>
         </View>
         <TouchableOpacity
