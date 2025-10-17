@@ -20,6 +20,9 @@ export default function DoctorTabs() {
       <Tabs.Screen name="patients" options={{ title:'Patients',headerShown: false,
         tabBarIcon: ({color, focused}) => <Ionicons name={focused?'people':'people-outline'} size={24} color={color} />
       }}/>
+      <Tabs.Screen name="plans" options={{ title: 'Plans',headerShown: false, tabBarIcon: ({ color, focused }) =>  
+        (<Ionicons name={focused ? 'clipboard' : 'clipboard-outline'} color={color} size={24}/>
+        ),}}/>
       <Tabs.Screen name="create" options={{ title:'Create',headerShown: false,
         tabBarIcon: ({color, focused}) => <Ionicons name={focused?'add-circle':'add-circle-outline'} size={24} color={color} />
       }}/>
