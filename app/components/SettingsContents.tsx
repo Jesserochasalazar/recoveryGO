@@ -1,10 +1,23 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useRouter } from "expo-router";
+import { signOut } from "firebase/auth";
 import React from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { auth } from "../../firebase/firebaseConfig";
 
 type AccountType = "patient" | "doctor";
 
 export default function SettingsContent({ accountType }: { accountType: AccountType }) {
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      router.replace("/");
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Failed to sign out");
+    }
+  };
   return (
     <View style={styles.screen}>
       {/* Header (local, since tab headers are hidden) */}
@@ -109,6 +122,15 @@ export default function SettingsContent({ accountType }: { accountType: AccountT
             </View>
           </>
         )}
+
+        {/* Account */}
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Account</Text>
+        <TouchableOpacity style={[styles.card, { borderColor: "#fecaca" }]} onPress={handleSignOut} accessibilityRole="button">
+          <View style={styles.rowBetween}>
+            <Text style={[styles.cardTitle, { color: "#dc2626" }]}>Sign out</Text>
+            <Ionicons name="log-out-outline" size={18} color="#dc2626" />
+          </View>
+        </TouchableOpacity>
 
         {/* Spacer so last card isn't hidden under the tab bar */}
         <View style={{ height: 80 }} />
