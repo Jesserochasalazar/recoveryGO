@@ -1,6 +1,8 @@
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { auth } from '../../firebase/firebaseConfig';
+import { getActiveSession, listEntriesForSession, getDateKey } from '../../src/utils/dailyLog';
 
 type Activity = {
   id: string;
@@ -14,30 +16,89 @@ type Activity = {
 export default function ProgressScreen() {
   const router = useRouter();
 
-  // Demo metrics (swap with real data later)
-  const completionRate = 85; // %
-  const consistencyPct = 86; // % (12/14 days)
-  const weekLabel = 'Week 2';
+  const [weekLabel, setWeekLabel] = useState('Week');
+  const [completionRate, setCompletionRate] = useState(0);
+  const [consistencyPct, setConsistencyPct] = useState(0);
+  const [consistencyLabel, setConsistencyLabel] = useState('0/0 days');
+  const [week, setWeek] = useState<{ day: string; value: number; done: boolean }[]>([
+    { day: 'Mon', value: 0, done: false },
+    { day: 'Tue', value: 0, done: false },
+    { day: 'Wed', value: 0, done: false },
+    { day: 'Thu', value: 0, done: false },
+    { day: 'Fri', value: 0, done: false },
+    { day: 'Sat', value: 0, done: false },
+    { day: 'Sun', value: 0, done: false },
+  ]);
 
-  // Simple weekly bars. Values are "percent of target" per day
-  const week = useMemo(
-    () => [
-      { day: 'Mon', value: 30, done: true },
-      { day: 'Tue', value: 45, done: true },
-      { day: 'Wed', value: 60, done: true },
-      { day: 'Thu', value: 75, done: true },
-      { day: 'Fri', value: 90, done: true },
-      { day: 'Sat', value: 15, done: false },
-      { day: 'Sun', value: 10, done: false },
-    ],
-    []
-  );
+  useEffect(() => {
+    (async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      const session = await getActiveSession(user);
+      if (!session) return;
+      const entries = await listEntriesForSession(user, session);
 
-  const activities: Activity[] = [
-    { id: 'a1', title: 'Completed morning routine', when: 'Today, 9:30 AM', badge: '100%', badgeVariant: 'solid', dotColor: '#16a34a' },
-    { id: 'a2', title: 'Pain level logged', when: 'Yesterday, 8:15 PM', badge: '3/10', badgeVariant: 'outline', dotColor: '#22c55e' },
-    { id: 'a3', title: 'New milestone reached', when: '2 days ago', badge: 'Goal', badgeVariant: 'solid', dotColor: '#0ea5e9' },
-  ];
+      const startDate = session.startDate?.toDate ? session.startDate.toDate() : new Date();
+      const endDate = session.endDate?.toDate ? session.endDate.toDate() : new Date();
+      const today = new Date();
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const elapsedDays = Math.min(
+        Math.floor((Math.min(today.getTime(), endDate.getTime()) - startDate.getTime()) / msPerDay) + 1,
+        session.durationDays || 0
+      );
+      const currentWeek = Math.max(1, Math.floor(((today.getTime() - startDate.getTime()) / msPerDay) / 7) + 1);
+      const totalWeeks = Math.max(1, Math.ceil((session.durationDays || 0) / 7));
+      setWeekLabel(`Week ${currentWeek}${totalWeeks ? ` of ${totalWeeks}` : ''}`);
+
+      // Compute completion rate across entries
+      let totalDone = 0;
+      let totalExercises = 0;
+      entries.forEach((e) => {
+        totalDone += Number(e.completedCount || 0);
+        totalExercises += Number(e.totalExercises || 0);
+      });
+      const comp = totalExercises > 0 ? Math.round((totalDone / totalExercises) * 100) : 0;
+      setCompletionRate(comp);
+
+      // Consistency: days with any completion out of elapsed days
+      const byDate: Record<string, { done: number; total: number }> = {};
+      entries.forEach((e) => {
+        byDate[e.dateKey] = { done: Number(e.completedCount || 0), total: Number(e.totalExercises || 0) };
+      });
+      let daysWithActivity = 0;
+      for (let i = 0; i < elapsedDays; i++) {
+        const date = new Date(startDate.getTime() + i * msPerDay);
+        const dk = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const d = byDate[dk];
+        if (d && d.done > 0) daysWithActivity += 1;
+      }
+      const consPct = elapsedDays > 0 ? Math.round((daysWithActivity / elapsedDays) * 100) : 0;
+      setConsistencyPct(consPct);
+      setConsistencyLabel(`${daysWithActivity}/${elapsedDays} days`);
+
+      // This Week bars: compute for the last 7 days ending today
+      const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const seven: { day: string; value: number; done: boolean }[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(base.getTime() - i * msPerDay);
+        const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const entry = byDate[dk];
+        const value = entry && entry.total > 0 ? Math.round((entry.done / entry.total) * 100) : 0;
+        const done = entry ? entry.done === entry.total && entry.total > 0 : false;
+        seven.push({ day: days[d.getDay()], value, done });
+      }
+      setWeek(seven);
+    })();
+  }, []);
+
+  const activities: Activity[] = useMemo(() => {
+    // Basic activity feed from recent entries (last 5)
+    const user = auth.currentUser; // not reactive; fine for initial build
+    return [
+      // Placeholder; can be enhanced to map real entries
+    ];
+  }, []);
 
   return (
     <View style={styles.screen}>
@@ -72,7 +133,7 @@ export default function ProgressScreen() {
           <View style={{ marginTop: 12 }}>
             <View style={styles.rowBetween}>
               <Text style={styles.metaTextDark}>Consistency</Text>
-              <Text style={styles.metaTextBold}>12/14 days</Text>
+              <Text style={styles.metaTextBold}>{consistencyLabel}</Text>
             </View>
             <View style={styles.track}>
               <View style={[styles.fill, { width: `${consistencyPct}%` }]} />

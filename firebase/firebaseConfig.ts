@@ -1,13 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
+// Firebase configuration is now sourced from environment variables.
+// In Expo, any variable prefixed with EXPO_PUBLIC_ is embedded in the client bundle.
 const firebaseConfig = {
-  apiKey: "AIzaSyBMqqLdTI3GH2iFCT7kYQYauOBSLI84FSs",
-  authDomain: "recoverygo-fce10.firebaseapp.com",
-  projectId: "recoverygo-fce10",
-  storageBucket: "recoverygo-fce10.appspot.com",
-  messagingSenderId: "474041637903",
-  appId: "1:474041637903:web:ee39b6282a392b9655d77a",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY as string,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN as string,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID as string,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET as string,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID as string,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID as string,
 };
 
 // Initialize and export

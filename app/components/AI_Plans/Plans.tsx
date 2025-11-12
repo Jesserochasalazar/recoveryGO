@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Constants from 'expo-constants';
 import { useRouter, type Href } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import Constants from 'expo-constants';
 import { auth } from '../../../firebase/firebaseConfig';
 import { createGeneratedPlan, listUserGeneratedPlans, type GeneratedPlan } from '../../../src/utils/generatedPlans';
 
@@ -268,7 +268,6 @@ export default function Plans({
           </TouchableOpacity>
         </View>
 
-        {/* bottom spacer so content doesn't hide behind tab bar */}
         <View style={{ height: 72 }} />
       </ScrollView>
     </View>
@@ -293,8 +292,6 @@ function normalizeForSave(data: any, fallbackVisibility: 'Private' | 'Public') {
   };
 }
 
-// Local client-only OpenAI call for testing.
-// IMPORTANT: Do not ship real secrets in client apps. Prefer a server function.
 async function generateRoutineFromAIClient(params: {
   injuryType: string;
   goals: string;
