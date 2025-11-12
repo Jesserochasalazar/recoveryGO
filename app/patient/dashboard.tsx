@@ -1,35 +1,41 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth } from '../../firebase/firebaseConfig';
 import type { Profile } from '../../src/types';
 import { getJSON } from '../../src/utils/storage';
+import { listUserRoutines, type Routine, getRoutine } from '../../src/utils/userRotuines';
+import { listUserGeneratedPlans, type GeneratedPlan, getGeneratedPlan } from '../../src/utils/generatedPlans';
+import {
+  getActiveSession,
+  startOrReplacePlanSession,
+  ensureTodayEntry,
+  getDailyEntry,
+  updateDailyEntryStatus,
+  getDateKey,
+  replaceTodayEntryWithPlan,
+  type ExerciseSummary,
+} from '../../src/utils/dailyLog';
 
-type Plan = { id: string; name: string; exercises: number; type: string[] };
 type RoutineItem = {
   id: string;
   name: string;
   sets?: number;
   reps?: number;
   duration?: string;
-  completed: boolean;
+  status?: 'pending' | 'in_progress' | 'completed';
 };
 
 export default function PatientDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [generated, setGenerated] = useState<GeneratedPlan[]>([]);
 
   // Demo data – replace with your real data later
-  const savedPlans: Plan[] = [
-    { id: 'p1', name: 'Knee Recovery – Beginner', exercises: 8, type: ['mobility', 'strength'] },
-    { id: 'p2', name: 'Lower Back Strengthening', exercises: 10, type: ['core', 'stability'] },
-  ];
 
-  const todaysRoutine: RoutineItem[] = [
-    { id: 'r1', name: 'Knee Flexion', sets: 3, reps: 10, completed: true },
-    { id: 'r2', name: 'Balance Training', duration: '2 min', completed: false },
-    { id: 'r3', name: 'Hamstring Stretch', duration: '5 min', completed: false },
-  ];
+  const [todaysRoutine, setTodaysRoutine] = useState<RoutineItem[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -38,16 +44,250 @@ export default function PatientDashboard() {
     })();
   }, []);
 
+  // Load user's routines for "My Plans" list
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        if (active) { setRoutines([]); setGenerated([]); }
+        return;
+      }
+      try {
+        const list = await listUserRoutines(user.uid);
+        const gen = await listUserGeneratedPlans(user.uid);
+        if (active) { setRoutines(list); setGenerated(gen); }
+      } catch {
+        if (active) { setRoutines([]); setGenerated([]); }
+      }
+    };
+    load();
+    return () => { active = false; };
+  }, []);
+
+  // Load today's persisted entry (if any) for the signed-in user
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        let entry = await getDailyEntry(user, getDateKey());
+        if (!entry) {
+          const session = await getActiveSession(user);
+          const now = Date.now();
+          const endMs = (session as any)?.endDate?.toMillis ? (session as any).endDate.toMillis() : 0;
+          if (session && endMs > now) {
+            entry = await ensureTodayEntry(user, {
+              planType: session.planType as any,
+              planId: session.planId,
+              planName: session.planName,
+              exercises: (session as any)?.exercises || [],
+            });
+          }
+        }
+        if (entry && active) {
+          const items: RoutineItem[] = (entry.exercises || []).map((e) => ({
+            id: e.id,
+            name: e.name,
+            sets: e.sets,
+            reps: e.reps,
+            duration: e.duration,
+            status: (entry.statuses?.[e.id] as any) || 'pending',
+          }));
+          setTodaysRoutine(items);
+        }
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, []);
+
   const progressPct = useMemo(() => {
     if (!todaysRoutine.length) return 0;
-    const done = todaysRoutine.filter(x => x.completed).length;
+    const done = todaysRoutine.filter(x => x.status === 'completed').length;
     return Math.round((done / todaysRoutine.length) * 100);
   }, [todaysRoutine]);
 
-  const handleStartPlan = (planId: string) => {
-    // Navigate to a plan detail or the Plans tab
-    router.push('/patient/plans');
+  const handleStartPlan = async (planId: string) => {
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to start a plan.');
+      return;
+    }
+    try {
+      const isRoutine = planId.startsWith('r-');
+      const id = isRoutine ? planId.slice(2) : planId.slice(2);
+      const plan = isRoutine ? await getRoutine(id) : await getGeneratedPlan(id);
+      const name = (plan as any)?.name;
+      const durationString = (plan as any)?.duration as any;
+      const ex: ExerciseSummary[] = (((plan as any)?.exercises) ?? []).map((e: any, i: number) => ({
+        id: e.id || String(Date.now() + i),
+        name: e.name || `Exercise ${i + 1}`,
+        sets: e.sets,
+        reps: e.reps,
+        duration: e.duration,
+      }));
+
+      const existing = await getDailyEntry(user, getDateKey());
+
+      const doStartFresh = async (resetDuration: boolean) => {
+        // Update session (optionally reset duration), overwrite today's entry, update UI
+        await startOrReplacePlanSession(user, {
+          planType: isRoutine ? 'routine' : 'generated',
+          planId: id,
+          planName: name,
+          durationString,
+          exercises: ex,
+          keepRemaining: !resetDuration,
+        });
+        const entry = await replaceTodayEntryWithPlan(user, {
+          planType: isRoutine ? 'routine' : 'generated',
+          planId: id,
+          planName: name,
+          exercises: ex,
+        });
+        const items: RoutineItem[] = (entry.exercises || []).map((e) => ({
+          id: e.id,
+          name: e.name,
+          sets: e.sets,
+          reps: e.reps,
+          duration: e.duration,
+          status: (entry.statuses?.[e.id] as any) || 'pending',
+        }));
+        setTodaysRoutine(items);
+      };
+
+      if (!existing) {
+        // No entry yet: start fresh, keep duration window as-is for existing sessions
+        await doStartFresh(false);
+        return;
+      }
+
+      // If entry exists and it's the same plan, just load it
+      if ((existing.planType === (isRoutine ? 'routine' : 'generated')) && existing.planId === id) {
+        const items: RoutineItem[] = (existing.exercises || []).map((e) => ({
+          id: e.id,
+          name: e.name,
+          sets: e.sets,
+          reps: e.reps,
+          duration: e.duration,
+          status: (existing.statuses?.[e.id] as any) || 'pending',
+        }));
+        setTodaysRoutine(items);
+        return;
+      }
+
+      // Entry exists for a different plan: prompt user
+      const keepExistingHandler = async () => {
+        // Align session to existing entry so session and dashboard match
+        try {
+          await startOrReplacePlanSession(user, {
+            planType: existing.planType as any,
+            planId: existing.planId,
+            planName: (existing as any).planName,
+            durationString: null as any,
+            exercises: ((existing.exercises || []) as any[]).map((e) => ({
+              id: e.id,
+              name: e.name,
+              sets: e.sets,
+              reps: e.reps,
+              duration: e.duration,
+            })),
+            keepRemaining: true,
+          });
+        } catch {}
+        const items: RoutineItem[] = (existing.exercises || []).map((e) => ({
+          id: e.id,
+          name: e.name,
+          sets: e.sets,
+          reps: e.reps,
+          duration: e.duration,
+          status: (existing.statuses?.[e.id] as any) || 'pending',
+        }));
+        setTodaysRoutine(items);
+      };
+
+      if (Platform.OS === 'web') {
+        const confirmFresh = typeof window !== 'undefined' && (window as any).confirm
+          ? (window as any).confirm(
+              "Today's plan already exists. Start fresh with the new plan (resets today's progress and duration window)?"
+            )
+          : false;
+        if (confirmFresh) await doStartFresh(true);
+        else await keepExistingHandler();
+      } else {
+        Alert.alert(
+          "Today's plan already exists",
+          "Do you want to keep today's current plan, or start fresh with the new plan and reset today's progress (and duration window)?",
+          [
+            { text: 'Keep Current', style: 'cancel', onPress: () => { keepExistingHandler(); } },
+            { text: 'Start Fresh', style: 'destructive', onPress: async () => { await doStartFresh(true); } },
+          ]
+        );
+      }
+    } catch (e: any) {
+      console.warn('Failed to start plan', e);
+      Alert.alert('Failed to start plan', e?.message ?? 'Please try again.');
+    }
   };
+
+  const handleStartExercise = async (id: string) => {
+    setTodaysRoutine((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'in_progress' } : it)));
+    const user = auth.currentUser; if (user) await updateDailyEntryStatus(user, getDateKey(), id, 'in_progress');
+  };
+
+  const handleCompleteExercise = async (id: string) => {
+    setTodaysRoutine((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'completed' } : it)));
+    const user = auth.currentUser; if (user) await updateDailyEntryStatus(user, getDateKey(), id, 'completed');
+  };
+
+  const plansToShow = useMemo(() => {
+    const toMs = (t: any): number => {
+      try {
+        if (!t) return 0;
+        if (typeof t === 'number') return t;
+        if (typeof t?.toMillis === 'function') return t.toMillis();
+        if (typeof t?.toDate === 'function') return t.toDate().getTime();
+        if (typeof t?.seconds === 'number') return Math.floor(t.seconds * 1000);
+      } catch {}
+      return 0;
+    };
+
+    const items = [
+      ...routines.map((r) => ({
+        id: `r-${r.id}`,
+        name: r.name || 'Untitled Routine',
+        exercises:
+          r.summary?.totalExercises ?? (Array.isArray(r.exercises) ? r.exercises.length : 0),
+        type: ['Routine', r.visibility, r.duration || ''].filter(Boolean) as string[],
+        createdAtMs: toMs((r as any)?.updatedAt ?? (r as any)?.createdAt),
+      })),
+      ...generated.map((g) => ({
+        id: `g-${g.id}`,
+        name: g.name || 'AI Generated Routine',
+        exercises:
+          g.summary?.totalExercises ?? (Array.isArray(g.exercises) ? g.exercises.length : 0),
+        type: ['AI', g.visibility, g.duration || ''].filter(Boolean) as string[],
+        createdAtMs: toMs((g as any)?.updatedAt ?? (g as any)?.createdAt),
+      })),
+    ];
+
+    items.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+    return items.map(({ createdAtMs, ...rest }) => rest);
+  }, [routines, generated]);
+
+  // Pagination for "My Plans" (5 per page)
+  const PLANS_PAGE_SIZE = 5;
+  const [planPage, setPlanPage] = useState(0);
+  const totalPlanPages = Math.max(1, Math.ceil(plansToShow.length / PLANS_PAGE_SIZE));
+  const pagedPlans = useMemo(() => {
+    const start = planPage * PLANS_PAGE_SIZE;
+    return plansToShow.slice(start, start + PLANS_PAGE_SIZE);
+  }, [plansToShow, planPage]);
+  useEffect(() => {
+    // Reset to first page when list size changes
+    setPlanPage(0);
+  }, [plansToShow.length]);
 
   return (
     <View style={styles.screen}>
@@ -74,7 +314,7 @@ export default function PatientDashboard() {
       <Text style={styles.cardTitle}>Today’s Progress</Text>
       <View style={styles.badge}>
         <Text style={styles.badgeText}>
-          {todaysRoutine.filter(x => x.completed).length}/{todaysRoutine.length} Complete
+          {todaysRoutine.filter(x => x.status === 'completed').length}/{todaysRoutine.length} Complete
         </Text>
       </View>
     </View>
@@ -85,18 +325,92 @@ export default function PatientDashboard() {
   </View>
 </TouchableOpacity>
 
+
+{/* Today’s Routine */}
+        <View style={{ marginTop: 16, paddingBottom: 16 }}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.sectionTitle}>Today’s Routine</Text>
+            <TouchableOpacity onPress={() => router.push('/patient/plans')} style={styles.ghostBtn}>
+              <Ionicons name="add" size={16} color="#111827" />
+              <Text style={styles.ghostBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+
+          {todaysRoutine.map(item => (
+            <View key={item.id} style={styles.card}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons
+                  name={item.status === 'completed' ? 'checkmark-circle' : 'time-outline'}
+                  size={22}
+                  color={item.status === 'completed' ? '#22c55e' : '#6b7280'}
+                  style={{ marginRight: 12 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardHeading}>{item.name}</Text>
+                  <Text style={styles.metaText}>
+                    {item.sets && item.reps
+                      ? `${item.sets} sets × ${item.reps} reps`
+                      : item.duration || 'Complete exercise'}
+                  </Text>
+                </View>
+
+                {item.status === 'completed' ? (
+                  <View style={styles.badgeLight}>
+                    <Text style={styles.badgeLightText}>Complete</Text>
+                  </View>
+                ) : item.status === 'in_progress' ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={[styles.badgeLight, { marginRight: 8 }]}>
+                      <Text style={styles.badgeLightText}>In-Progress</Text>
+                    </View>
+                    <TouchableOpacity style={styles.smallBtn} onPress={() => handleCompleteExercise(item.id)}>
+                      <Text style={styles.smallBtnText}>Complete</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.smallBtn} onPress={() => handleStartExercise(item.id)}>
+                    <Text style={styles.smallBtnText}>Start</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+
         {/* My Plans (patients only) */}
-        {savedPlans.length > 0 && (
+        {plansToShow.length > 0 && (
           <View style={{ marginTop: 12 }}>
             <View style={styles.rowBetween}>
               <Text style={styles.sectionTitle}>My Plans</Text>
-              <TouchableOpacity onPress={() => router.push('/patient/plans')} style={styles.ghostBtn}>
-                <Ionicons name="add" size={16} color="#111827" />
-                <Text style={styles.ghostBtnText}>New</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {/* Pagination controls */}
+                <TouchableOpacity
+                  onPress={() => setPlanPage((p) => Math.max(0, p - 1))}
+                  disabled={planPage === 0}
+                  style={[styles.ghostBtn, { marginRight: 8, opacity: planPage === 0 ? 0.5 : 1 }]}
+                >
+                  <Ionicons name="chevron-back" size={16} color="#111827" />
+                  <Text style={styles.ghostBtnText}>Prev</Text>
+                </TouchableOpacity>
+                <View style={[styles.ghostBtn, { paddingHorizontal: 10, paddingVertical: 6 }]}> 
+                  <Text style={styles.ghostBtnText}>{planPage + 1}/{totalPlanPages}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setPlanPage((p) => Math.min(totalPlanPages - 1, p + 1))}
+                  disabled={planPage >= totalPlanPages - 1}
+                  style={[styles.ghostBtn, { marginLeft: 8, opacity: planPage >= totalPlanPages - 1 ? 0.5 : 1 }]}
+                >
+                  <Text style={styles.ghostBtnText}>Next</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#111827" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/patient/plans')} style={[styles.ghostBtn, { marginLeft: 8 }]}>
+                  <Ionicons name="add" size={16} color="#111827" />
+                  <Text style={styles.ghostBtnText}>New</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {savedPlans.map(p => (
+            {pagedPlans.map(p => (
               <View key={p.id} style={styles.card}>
                 <View style={styles.rowBetween}>
                   <Text style={styles.cardHeading}>{p.name}</Text>
@@ -119,47 +433,7 @@ export default function PatientDashboard() {
           </View>
         )}
 
-        {/* Today’s Routine */}
-        <View style={{ marginTop: 16, paddingBottom: 16 }}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.sectionTitle}>Today’s Routine</Text>
-            <TouchableOpacity onPress={() => router.push('/patient/plans')} style={styles.ghostBtn}>
-              <Ionicons name="add" size={16} color="#111827" />
-              <Text style={styles.ghostBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          {todaysRoutine.map(item => (
-            <View key={item.id} style={styles.card}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons
-                  name={item.completed ? 'checkmark-circle' : 'time-outline'}
-                  size={22}
-                  color={item.completed ? '#22c55e' : '#6b7280'}
-                  style={{ marginRight: 12 }}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardHeading}>{item.name}</Text>
-                  <Text style={styles.metaText}>
-                    {item.sets && item.reps
-                      ? `${item.sets} sets × ${item.reps} reps`
-                      : item.duration || 'Complete exercise'}
-                  </Text>
-                </View>
-
-                {item.completed ? (
-                  <View style={styles.badgeLight}>
-                    <Text style={styles.badgeLightText}>Complete</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.smallBtn}>
-                    <Text style={styles.smallBtnText}>Start</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
+        
       </ScrollView>
     </View>
   );
