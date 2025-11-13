@@ -25,18 +25,13 @@ export default function RoutineBuilder({
 }: Props) {
   const router = useRouter();
 
-  const [routineName, setRoutineName] = useState('Shoulder Rehabilitation');
-  const [description, setDescription] = useState('Progressive shoulder mobility and strength exercises');
+  const [routineName, setRoutineName] = useState('');
+  const [description, setDescription] = useState('');
   const [duration, setDuration] = useState<(typeof DURATION_OPTIONS)[number]>('4 weeks');
   const [visibility, setVisibility] = useState<RoutineVisibility>(defaultVisibility);
   const [busy, setBusy] = useState(false);
 
-  const [exercises, setExercises] = useState<Exercise[]>(
-    seedExercises ?? [
-      { id: '1', name: 'Arm Circles', sets: 3, reps: 15, rest: '30s' },
-      { id: '2', name: 'Wall Push-ups', sets: 2, reps: 8, rest: '60s' },
-    ]
-  );
+  const [exercises, setExercises] = useState<Exercise[]>(seedExercises ?? []);
 
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [newEx, setNewEx] = useState({ name: '', sets: '3', reps: '10', rest: '30s', category: '', bodyPart: '' });
