@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth } from '../../firebase/firebaseConfig';
 import type { Profile } from '../../src/types';
 import { getJSON } from '../../src/utils/storage';
@@ -17,6 +17,12 @@ import {
   replaceTodayEntryWithPlan,
   type ExerciseSummary,
 } from '../../src/utils/dailyLog';
+import {
+  acceptPatientInvite,
+  declinePatientInvite,
+  listPendingInvitesForPatient,
+  type DoctorPatientLink,
+} from '../../src/utils/doctorPatients';
 
 type RoutineItem = {
   id: string;
@@ -32,10 +38,57 @@ export default function PatientDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [generated, setGenerated] = useState<GeneratedPlan[]>([]);
-
-  // Demo data – replace with your real data later
-
   const [todaysRoutine, setTodaysRoutine] = useState<RoutineItem[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<DoctorPatientLink[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(true);
+  const [inviteCenterVisible, setInviteCenterVisible] = useState(false);
+  const [processingInviteAction, setProcessingInviteAction] = useState<string | null>(null);
+
+  const refreshInvites = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setPendingInvites([]);
+      setInvitesLoading(false);
+      return;
+    }
+    setInvitesLoading(true);
+    try {
+      const list = await listPendingInvitesForPatient(user);
+      setPendingInvites(list);
+    } catch (err) {
+      console.error('Failed to load invites', err);
+      Alert.alert('Unable to load invites', 'Please try again later.');
+    } finally {
+      setInvitesLoading(false);
+    }
+  }, []);
+
+  const handleInviteAction = useCallback(
+    async (inviteId: string, action: 'accept' | 'decline') => {
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert('Sign in required', 'Please sign in to respond to invites.');
+        return;
+      }
+      const profileName = profile ? `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim() : undefined;
+      setProcessingInviteAction(`${action}:${inviteId}`);
+      try {
+        if (action === 'accept') {
+          await acceptPatientInvite(user, inviteId, { patientName: profileName });
+          Alert.alert('Invite accepted', 'You are now connected with this doctor.');
+        } else {
+          await declinePatientInvite(user, inviteId);
+          Alert.alert('Invite declined', 'The doctor will be notified.');
+        }
+        await refreshInvites();
+      } catch (err: any) {
+        Alert.alert('Error', err?.message ?? 'Something went wrong. Please try again.');
+      } finally {
+        setProcessingInviteAction(null);
+      }
+    },
+    [profile, refreshInvites],
+  );
 
   useEffect(() => {
     (async () => {
@@ -43,6 +96,10 @@ export default function PatientDashboard() {
       setProfile(p);
     })();
   }, []);
+
+  useEffect(() => {
+    refreshInvites();
+  }, [refreshInvites]);
 
   // Load user's routines for "My Plans" list
   useEffect(() => {
@@ -297,13 +354,23 @@ export default function PatientDashboard() {
           <Text style={styles.h1}>Good morning, {profile?.firstName ?? 'Alex'}</Text>
           <Text style={styles.h2}>Day 12 of recovery</Text>
         </View>
-        <TouchableOpacity
-          accessibilityRole="button"
-          onPress={() => router.push('/patient/settings')}
-          style={styles.iconBtn}
-        >
-          <Ionicons name="settings-outline" size={22} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => setInviteCenterVisible(true)}
+            style={styles.iconBtn}
+          >
+            <Ionicons name="mail-outline" size={20} color="#fff" />
+            {pendingInvites.length > 0 && <View style={styles.inviteDot} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => router.push('/patient/settings')}
+            style={[styles.iconBtn, { marginLeft: 8 }]}
+          >
+            <Ionicons name="settings-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
@@ -435,6 +502,79 @@ export default function PatientDashboard() {
 
         
       </ScrollView>
+
+      <Modal
+        visible={inviteCenterVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInviteCenterVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.inviteModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Doctor Invites</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                onPress={() => setInviteCenterVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalHelp}>Accept to share your progress with a doctor, or decline to remove the invite.</Text>
+
+            {invitesLoading ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator color="#22c55e" />
+                <Text style={styles.modalHelp}>Checking for invites…</Text>
+              </View>
+            ) : pendingInvites.length === 0 ? (
+              <View style={styles.modalEmpty}>
+                <Ionicons name="mail-open-outline" size={36} color="#9ca3af" />
+                <Text style={styles.modalEmptyText}>No invites waiting right now.</Text>
+              </View>
+            ) : (
+              pendingInvites.map((invite) => {
+                const acceptBusy = processingInviteAction === `accept:${invite.id}`;
+                const declineBusy = processingInviteAction === `decline:${invite.id}`;
+                return (
+                  <View key={invite.id} style={styles.inviteCard}>
+                    <Text style={styles.inviteTitle}>Doctor request</Text>
+                    <Text style={styles.inviteMeta}>Doctor: {invite.doctorName ?? 'Doctor'}</Text>
+                    <Text style={styles.inviteMeta}>Sent to: {invite.invitedEmail}</Text>
+                    <View style={styles.inviteActions}>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        style={[styles.declineBtn, (acceptBusy || declineBusy) && styles.disabledBtn]}
+                        onPress={() => handleInviteAction(invite.id, 'decline')}
+                        disabled={acceptBusy || declineBusy}
+                      >
+                        {declineBusy ? (
+                          <ActivityIndicator color="#111827" />
+                        ) : (
+                          <Text style={styles.declineBtnText}>Decline</Text>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        style={[styles.acceptBtn, (acceptBusy || declineBusy) && styles.disabledBtn]}
+                        onPress={() => handleInviteAction(invite.id, 'accept')}
+                        disabled={acceptBusy || declineBusy}
+                      >
+                        {acceptBusy ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.acceptBtnText}>Accept</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -447,7 +587,17 @@ const styles = StyleSheet.create({
   },
   h1: { color: '#fff', fontWeight: '700', fontSize: 20 },
   h2: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
-  iconBtn: { padding: 8, borderRadius: 9999, backgroundColor: '#374151' },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  iconBtn: { padding: 8, borderRadius: 9999, backgroundColor: '#374151', position: 'relative' },
+  inviteDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#f87171',
+  },
 
   cardPrimary: {
     backgroundColor: '#16a34a', borderRadius: 12, padding: 16,
@@ -476,4 +626,51 @@ const styles = StyleSheet.create({
 
   badgeLight: { backgroundColor: '#E5E7EB', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   badgeLightText: { color: '#111827', fontWeight: '600', fontSize: 12 },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  inviteModal: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  modalHelp: { color: '#6b7280', marginTop: 8 },
+  modalCloseBtn: { padding: 4 },
+  modalLoading: { alignItems: 'center', paddingVertical: 20 },
+  modalEmpty: { alignItems: 'center', paddingVertical: 24 },
+  modalEmptyText: { color: '#6b7280', marginTop: 8 },
+  inviteCard: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
+  },
+  inviteTitle: { color: '#111827', fontWeight: '700', fontSize: 16 },
+  inviteMeta: { color: '#6b7280', marginTop: 4 },
+  inviteActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
+  declineBtn: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  declineBtnText: { color: '#111827', fontWeight: '600' },
+  acceptBtn: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  acceptBtnText: { color: '#fff', fontWeight: '700' },
+  disabledBtn: { opacity: 0.6 },
 });
