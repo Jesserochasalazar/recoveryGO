@@ -13,9 +13,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import type { User } from 'firebase/auth';
 
 import { auth } from '../../firebase/firebaseConfig';
 import { invitePatientByEmail, listDoctorPatients, type DoctorPatientLink } from '../../src/utils/doctorPatients';
+import { createGeneratedPlan, listUserGeneratedPlans, type GeneratedPlan } from '../../src/utils/generatedPlans';
+import { createRoutine, listUserRoutines, type Routine } from '../../src/utils/userRotuines';
 import type { Profile } from '../../src/types';
 import { getJSON } from '../../src/utils/storage';
 
@@ -31,6 +34,10 @@ export default function PatientsScreen() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [sendingInvite, setSendingInvite] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [doctorRoutines, setDoctorRoutines] = useState<Routine[]>([]);
+  const [doctorGeneratedPlans, setDoctorGeneratedPlans] = useState<GeneratedPlan[]>([]);
+  const [assignTarget, setAssignTarget] = useState<DoctorPatientLink | null>(null);
+  const [assigningPlanId, setAssigningPlanId] = useState<string | null>(null);
   const invitePromptedRef = useRef(false);
 
   useEffect(() => {
@@ -38,6 +45,35 @@ export default function PatientsScreen() {
       const p = await getJSON<Profile>('profile');
       setProfile(p);
     })();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadPlans = async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        if (active) {
+          setDoctorRoutines([]);
+          setDoctorGeneratedPlans([]);
+        }
+        return;
+      }
+      try {
+        const [manual, generated] = await Promise.all([
+          listUserRoutines(user.uid),
+          listUserGeneratedPlans(user.uid),
+        ]);
+        if (!active) return;
+        setDoctorRoutines(manual);
+        setDoctorGeneratedPlans(generated);
+      } catch (err) {
+        console.error('Failed to load plans', err);
+      }
+    };
+    loadPlans();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const loadPatients = useCallback(
@@ -107,8 +143,14 @@ export default function PatientsScreen() {
     return patients.filter((p) => {
       const name = (p.patientName ?? '').toLowerCase();
       const email = (p.invitedEmail ?? '').toLowerCase();
+      const profileName = `${p.patientProfile?.firstName ?? ''} ${p.patientProfile?.lastName ?? ''}`.toLowerCase();
       const status = (p.status ?? '').toLowerCase();
-      return name.includes(q) || email.includes(q) || status.includes(q);
+      return (
+        name.includes(q) ||
+        email.includes(q) ||
+        profileName.includes(q) ||
+        status.includes(q)
+      );
     });
   }, [patients, query]);
 
@@ -126,6 +168,44 @@ export default function PatientsScreen() {
     invitePromptedRef.current = true;
     openInviteModal(emailParam);
   }, [inviteParam, emailParam, openInviteModal]);
+
+  const handleAssignPlan = useCallback(
+    async (
+      patient: DoctorPatientLink,
+      plan: { kind: 'routine' | 'generated'; data: Routine | GeneratedPlan }
+    ) => {
+      if (!patient.patientUid) {
+        Alert.alert('Unavailable', 'This patient must accept the invite before assigning plans.');
+        return;
+      }
+      const pseudoPatient = { uid: patient.patientUid } as User;
+      const planKey = `${plan.kind}:${plan.data.id}`;
+      setAssigningPlanId(planKey);
+      try {
+        const basePayload = {
+          name: plan.data.name || 'Untitled Plan',
+          description: plan.data.description || '',
+          duration: plan.data.duration,
+          visibility: plan.data.visibility ?? 'Private',
+          exercises: plan.data.exercises ?? [],
+          summary: plan.data.summary,
+        };
+        if (plan.kind === 'routine') {
+          await createRoutine(pseudoPatient, basePayload);
+        } else {
+          await createGeneratedPlan(pseudoPatient, basePayload);
+        }
+        Alert.alert('Plan assigned', `${basePayload.name} is now available to ${patient.patientName ?? 'your patient'}.`);
+        setAssignTarget(null);
+      } catch (err: any) {
+        console.error('Failed to assign plan', err);
+        Alert.alert('Error', err?.message ?? 'Could not assign this plan.');
+      } finally {
+        setAssigningPlanId(null);
+      }
+    },
+    [],
+  );
 
   const renderContent = () => {
     if (loading) {
@@ -149,8 +229,9 @@ export default function PatientsScreen() {
     }
 
     return filtered.map((p) => {
-      const name = p.patientName || p.invitedEmail || 'Pending invite';
-      const sub = patientSubLabel(p);
+      const profileName = `${p.patientProfile?.firstName ?? ''} ${p.patientProfile?.lastName ?? ''}`.trim();
+      const name = profileName || p.patientName || p.invitedEmail || 'Pending invite';
+      const sub = p.patientProfile?.email ?? patientSubLabel(p);
       const statusLabel = humanStatus(p.status);
       const progress = Number.isFinite(p.progressPercent) ? Math.round(p.progressPercent ?? 0) : 0;
       const isActive = p.status === 'active' && !!p.patientUid;
@@ -181,7 +262,7 @@ export default function PatientsScreen() {
             {isActive ? (
               <TouchableOpacity
                 style={styles.outlineBtn}
-                onPress={() => router.push(`/doctor/patient/${p.patientUid ?? p.id}/assign`)}
+                onPress={() => setAssignTarget(p)}
                 accessibilityRole="button"
               >
                 <Text style={styles.outlineBtnText}>Assign Routine</Text>
@@ -291,6 +372,87 @@ export default function PatientsScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!assignTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAssignTarget(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.assignModalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Assign routine</Text>
+              <TouchableOpacity accessibilityRole="button" onPress={() => setAssignTarget(null)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>
+              Share one of your routines or AI plans with {assignTarget?.patientName ?? assignTarget?.invitedEmail ?? 'this patient'}.
+            </Text>
+
+            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 8 }}>
+              <Text style={styles.modalSectionTitle}>Saved Routines</Text>
+              {doctorRoutines.length === 0 ? (
+                <Text style={styles.modalEmptyText}>No saved routines yet.</Text>
+              ) : (
+                doctorRoutines.map((plan) => {
+                  const key = `routine:${plan.id}`;
+                  const busy = assigningPlanId === key;
+                  const exercisesCount = plan.summary?.totalExercises ?? plan.exercises?.length ?? 0;
+                  return (
+                    <View key={plan.id} style={styles.planCard}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.planTitle}>{plan.name || 'Untitled Routine'}</Text>
+                        <Text style={styles.planMeta}>
+                          {exercisesCount} exercises · {plan.duration ?? 'duration n/a'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        style={[styles.planAssignBtn, busy && styles.disabledBtn]}
+                        onPress={() => assignTarget && handleAssignPlan(assignTarget, { kind: 'routine', data: plan })}
+                        disabled={busy}
+                      >
+                        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.planAssignBtnText}>Assign</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
+
+              <Text style={[styles.modalSectionTitle, { marginTop: 20 }]}>AI Plans</Text>
+              {doctorGeneratedPlans.length === 0 ? (
+                <Text style={styles.modalEmptyText}>No generated plans yet.</Text>
+              ) : (
+                doctorGeneratedPlans.map((plan) => {
+                  const key = `generated:${plan.id}`;
+                  const busy = assigningPlanId === key;
+                  const exercisesCount = plan.summary?.totalExercises ?? plan.exercises?.length ?? 0;
+                  return (
+                    <View key={plan.id} style={styles.planCard}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.planTitle}>{plan.name || 'AI Plan'}</Text>
+                        <Text style={styles.planMeta}>
+                          {exercisesCount} exercises · {plan.duration ?? 'duration n/a'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        style={[styles.planAssignBtn, busy && styles.disabledBtn]}
+                        onPress={() => assignTarget && handleAssignPlan(assignTarget, { kind: 'generated', data: plan })}
+                        disabled={busy}
+                      >
+                        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.planAssignBtnText}>Assign</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -453,11 +615,40 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
   },
+  assignModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxHeight: '85%',
+  },
   modalTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
   modalSub: { color: '#6b7280', marginTop: 4, marginBottom: 16 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalCloseBtn: { padding: 4 },
+  modalSectionTitle: { color: '#111827', fontWeight: '700', marginTop: 8 },
   modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 16 },
   modalCancelBtn: { marginRight: 10 },
   modalActionSpacer: { marginLeft: 10 },
+  planCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  planTitle: { color: '#111827', fontWeight: '600' },
+  planMeta: { color: '#6b7280', marginTop: 4, fontSize: 12 },
+  planAssignBtn: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginLeft: 12,
+  },
+  planAssignBtnText: { color: '#fff', fontWeight: '700' },
 
   loadingWrap: {
     flex: 1,
@@ -468,4 +659,5 @@ const styles = StyleSheet.create({
   loadingText: { color: '#9ca3af', marginTop: 8 },
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
   emptyText: { color: '#9ca3af', marginTop: 8, textAlign: 'center' },
+  disabledBtn: { opacity: 0.6 },
 });
