@@ -22,6 +22,7 @@ import {
   declinePatientInvite,
   listPendingInvitesForPatient,
   type DoctorPatientLink,
+  updatePatientProgress,
 } from '../../src/utils/doctorPatients';
 
 type RoutineItem = {
@@ -164,6 +165,14 @@ export default function PatientDashboard() {
     const done = todaysRoutine.filter(x => x.status === 'completed').length;
     return Math.round((done / todaysRoutine.length) * 100);
   }, [todaysRoutine]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !Number.isFinite(progressPct)) return;
+    updatePatientProgress(user, progressPct).catch((err) => {
+      console.error('Failed to sync progress with doctor links', err);
+    });
+  }, [progressPct]);
 
   const handleStartPlan = async (planId: string) => {
     const user = auth.currentUser;

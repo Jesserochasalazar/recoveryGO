@@ -20,6 +20,11 @@ export type DoctorPatientLink = {
   patientUid?: string;
   invitedEmail: string;
   patientName?: string;
+  patientProfile?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string | null;
+  };
   status: 'invited' | 'pending' | 'active' | 'declined';
   progressPercent?: number;
   lastProgressAt?: any;
@@ -58,6 +63,40 @@ export async function listDoctorPatients(doctorUid: string): Promise<DoctorPatie
   const qy = query(col, where('doctorUid', '==', doctorUid));
   const snapshot = await getDocs(qy);
   const items = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) })) as DoctorPatientLink[];
+
+  const uids = Array.from(
+    new Set(items.map((item) => item.patientUid).filter((uid): uid is string => typeof uid === 'string' && uid.length > 0))
+  );
+  if (uids.length) {
+    const profileEntries = await Promise.all(
+      uids.map(async (uid) => {
+        try {
+          const snap = await getDoc(doc(db, 'users', uid));
+          return snap.exists() ? ({ uid, ...(snap.data() as any) } as any) : null;
+        } catch {
+          return null;
+        }
+      })
+    );
+    const map = new Map<string, any>();
+    profileEntries.forEach((entry) => {
+      if (entry?.uid) map.set(entry.uid, entry);
+    });
+    items.forEach((item) => {
+      if (!item.patientUid) return;
+      const profile = map.get(item.patientUid);
+      if (profile) {
+        const fullName = `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim();
+        item.patientProfile = {
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          email: profile.email,
+        };
+        if (!item.patientName && fullName) item.patientName = fullName;
+      }
+    });
+  }
+
   items.sort((a, b) => {
     const aTs = (a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0);
     const bTs = (b.updatedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0);
@@ -138,4 +177,21 @@ export async function declinePatientInvite(user: User, inviteId: string) {
     status: 'declined',
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function updatePatientProgress(user: User, percent: number) {
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const db = getFirestore();
+  const col = collection(db, COLLECTION);
+  const qy = query(col, where('patientUid', '==', user.uid), where('status', '==', 'active'));
+  const snap = await getDocs(qy);
+  if (snap.empty) return;
+  await Promise.all(
+    snap.docs.map((docSnap) =>
+      updateDoc(doc(db, COLLECTION, docSnap.id), {
+        progressPercent: clamped,
+        lastProgressAt: serverTimestamp(),
+      })
+    )
+  );
 }
