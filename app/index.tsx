@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { auth } from "../firebase/firebaseConfig";
+import type { UserType } from "../src/types";
 import { upsertUser } from "../src/utils/userDoc";
 
 const db = getFirestore();
@@ -33,11 +34,19 @@ export default function SignInScreen() {
 
   async function postAuthRoute(uid: string) {
     const snap = await getDoc(doc(db, "users", uid));
-    const onboarded = snap.exists() ? snap.data()?.onboarded === true : false;
-    if (onboarded) {
-      router.replace("/patient/dashboard");
-    } else {
+    const data = snap.exists() ? snap.data() : null;
+    const onboarded = data?.onboarded === true;
+
+    if (!onboarded) {
       router.replace("/onboarding");
+      return;
+    }
+
+    const userType = data?.userType as UserType | undefined;
+    if (userType === "doctor") {
+      router.replace("/doctor/dashboard");
+    } else {
+      router.replace("/patient/dashboard");
     }
   }
 

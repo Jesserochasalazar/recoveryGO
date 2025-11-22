@@ -71,6 +71,10 @@ export default function Plans({
         difficulty,
         visibility,
       } as const;
+  //  Ask OpenAI to draft the routine
+  //  Ensure consistent JSON shape
+  //  Persist in Firestore
+  // ➍Refresh local lis
       const data = await generateRoutineFromAIClient(payload);
       const normalized = normalizeForSave(data, visibility);
       await createGeneratedPlan(auth.currentUser, normalized);
@@ -273,6 +277,7 @@ export default function Plans({
     </View>
   );
 }
+// Normalize AI response data for saving as GeneratedPlan
 
 function normalizeForSave(data: any, fallbackVisibility: 'Private' | 'Public') {
   const name = (data?.name as string) || 'AI Generated Routine';
@@ -292,6 +297,7 @@ function normalizeForSave(data: any, fallbackVisibility: 'Private' | 'Public') {
   };
 }
 
+// AI generation via OpenAI API gets the input params and returns the parsed routine data
 async function generateRoutineFromAIClient(params: {
   injuryType: string;
   goals: string;
@@ -316,6 +322,7 @@ async function generateRoutineFromAIClient(params: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
+    // calls the chat completions
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       messages: [
@@ -332,6 +339,7 @@ async function generateRoutineFromAIClient(params: {
     const text = await res.text();
     throw new Error(`OpenAI error: ${text}`);
   }
+  //fall back parsing if falls
   const json = await res.json();
   const content = json?.choices?.[0]?.message?.content ?? '{}';
   try {
