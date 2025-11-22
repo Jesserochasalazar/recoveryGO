@@ -2,15 +2,15 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { auth } from '../../firebase/firebaseConfig';
-import { getActiveSession, listEntriesForSession, getDateKey } from '../../src/utils/dailyLog';
+import { getActiveSession, listEntriesForSession } from '../../src/utils/dailyLog';
 
 type Activity = {
   id: string;
   title: string;
   when: string;
-  badge?: string; // e.g., "100%", "3/10", "Goal"
+  badge?: string; 
   badgeVariant?: 'solid' | 'outline';
-  dotColor?: string; // small left dot color
+  dotColor?: string; 
 };
 
 export default function ProgressScreen() {
